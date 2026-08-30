@@ -127,7 +127,7 @@
     font-size:clamp(.7rem,2vw,.82rem); letter-spacing:.5em;
     text-transform:uppercase; color:var(--gold);
     opacity:0; transform:translateY(10px);
-    transition:opacity 1s ease .15s, transform 1s ease .15s;
+    transition:opacity 1.4s ease .6s, transform 1.4s ease .6s;
   }
   .m-main{
     font-family:var(--script); font-weight:400;
@@ -135,14 +135,14 @@
     color:var(--cream); margin:.12em 0 .04em;
     text-shadow:0 0 42px rgba(255,120,170,.55), 0 0 8px rgba(255,200,220,.4);
     opacity:0; transform:translateY(18px);
-    transition:opacity 1.3s ease .35s, transform 1.3s ease .35s;
+    transition:opacity 1.8s ease 3.2s, transform 1.8s ease 3.2s;
   }
   .m-sub{
     font-style:italic; font-weight:300;
     font-size:clamp(1.05rem, 3.4vw, 1.7rem);
     letter-spacing:.03em; color:var(--ink);
     opacity:0; transform:translateY(14px);
-    transition:opacity 1.1s ease .75s, transform 1.1s ease .75s;
+    transition:opacity 1.5s ease 6.2s, transform 1.5s ease 6.2s;
   }
   .message.show .m-eyebrow,
   .message.show .m-main,
@@ -168,6 +168,7 @@
 
   @media (prefers-reduced-motion: reduce){
     *{ transition-duration:.35s !important; }
+    .m-eyebrow, .m-main, .m-sub{ transition-delay:0s !important; }
     .key-input.nope{ animation:none; }
   }
 </style>
@@ -269,6 +270,9 @@
   const lerp   = (a,b,t) => a + (b-a)*t;
   const smoother = x => { x = clamp01(x); return x*x*x*(x*(x*6-15)+10); };
   const rand = (a,b) => a + Math.random()*(b-a);
+  // timeline shapes, in seconds since the words are typed:
+  const ramp  = (t,a,b) => smoother((t-a)/(b-a));          // 0 before a → 1 after b
+  const gpulse= (t,c,w) => Math.exp(-Math.pow((t-c)/w,2)); // a soft bump centred at c
   const norm = s => s.toLowerCase().normalize('NFKD')
                      .replace(/[^a-z0-9\s]/g,'').replace(/\s+/g,' ').trim();
 
@@ -460,7 +464,7 @@
   composer.addPass(bloom);
 
   // ---------- state ----------
-  const state = { intensity: reduce ? 0 : 0, target: 0, unlocked:false, backToIntro:false };
+  const state = { intensity: 0, target: 0, unlocked:false, backToIntro:false, showTime:0 };
   const dummy = new THREE.Object3D();
   const clock = new THREE.Clock();
   const pointer = { x:0, y:0, tx:0, ty:0 };
@@ -506,9 +510,8 @@
 
   setTimeout(()=>{ try{ keyEl.focus(); }catch(e){} }, 600);
 
-  // ---------- heartbeat (lub-dub) ----------
-  function heartbeat(t){
-    const period = 1.15;
+  // ---------- heartbeat (lub-dub); period can change to feel excited or calm ----------
+  function heartbeat(t, period){
     const p = (t % period) / period;
     const b1 = Math.exp(-Math.pow((p - 0.00)/0.06, 2));
     const b2 = Math.exp(-Math.pow((p - 0.20)/0.07, 2)) * 0.75;
@@ -522,21 +525,36 @@
     const dt = Math.min(clock.getDelta(), 0.05);
     const t  = clock.elapsedTime;
 
-    // ease the intensity toward its target
+    // ease the intensity toward its target (a touch slower = a grander gather)
     if (!reduce){
-      state.intensity += (state.target - state.intensity) * Math.min(1, dt*1.8);
+      state.intensity += (state.target - state.intensity) * Math.min(1, dt*1.3);
     } else {
       state.intensity = state.target ? 1 : lerp(state.intensity, 0, Math.min(1,dt*3));
     }
     const I = state.intensity;
 
-    // glow + camera respond to intensity
-    bloom.strength = lerp(0.5, 1.25, I);
-    const camZ = lerp(CAM_START, CAM_REST, smoother(I));
+    // master show clock — seconds since the words were typed
+    if (state.target === 1) state.showTime += dt;
+    const s = state.showTime;
+
+    // ── glow swells at a few beats through the show, then settles ──
+    let bl = lerp(0.5, 1.15, I);
+    if (!reduce){
+      bl += 0.35*gpulse(s,4.5,1.6) + 0.50*gpulse(s,14,1.9)
+          + 0.45*gpulse(s,24,2.1) + 0.30*gpulse(s,33,2.3);
+      bl = lerp(bl, 1.1, ramp(s,36,40));
+    }
+    bloom.strength = Math.min(bl, 1.8);
+
+    // ── camera slowly pushes in and drifts, on top of mouse parallax ──
     pointer.x = lerp(pointer.x, pointer.tx, dt*2.2);
     pointer.y = lerp(pointer.y, pointer.ty, dt*2.2);
     const par = reduce ? 0 : 1;
-    camera.position.set(pointer.x*1.2*par, CAM_Y - pointer.y*0.7*par, camZ);
+    const camZ = lerp(CAM_START, CAM_REST, smoother(I))
+               - (reduce ? 0 : 0.8*ramp(s,2,38))
+               + (reduce ? 0 : 0.15*Math.sin(s*0.15));
+    const camX = pointer.x*1.2*par + (reduce ? 0 : Math.sin(s*0.12)*0.4*ramp(s,4,16));
+    camera.position.set(camX, CAM_Y - pointer.y*0.7*par, camZ);
     camera.lookAt(0, 0, 0);
 
     // big heart: assemble while intensity is changing, then rest (cheap)
@@ -544,11 +562,11 @@
     sparkMesh.visible = I > 0.35;
     if (Math.abs(I - lastI) > 0.0006 || I > 0.999 && lastI <= 0.999){
       for (let i=0;i<BIG;i++){
-        const pr = smoother((I - delays[i]) / 0.55);
-        const s  = sizes[i] * pr;
+        const pr  = smoother((I - delays[i]) / 0.55);
+        const isz = sizes[i] * pr;
         dummy.position.lerpVectors(starts[i], targets[i], pr);
         dummy.rotation.copy(rots[i]);
-        dummy.scale.setScalar(s);
+        dummy.scale.setScalar(isz);
         dummy.updateMatrix();
         bigMesh.setMatrixAt(i, dummy.matrix);
       }
@@ -556,13 +574,15 @@
     }
     lastI = I;
 
-    // whole-heart heartbeat + gentle sway (never spins fully edge-on)
-    const beat = reduce ? 0.02 : 0.06;
-    const pulse = 1 + heartbeat(t) * beat * I;
-    bigGroup.scale.setScalar(pulse);
+    // ── heartbeat (excited → calm) + a slow breath + a slowly-growing sway ──
+    const period = reduce ? 1.2 : lerp(1.05, 1.25, ramp(s,0,30));
+    const amp    = reduce ? 0.02 : (0.055 + 0.03*gpulse(s,14,2.2) + 0.025*gpulse(s,24,2.4));
+    const beatS  = 1 + heartbeat(t, period) * amp * I;
+    const breath = reduce ? 1 : 1 + 0.05*Math.sin(s*0.18)*ramp(s,2,7);
+    bigGroup.scale.setScalar(beatS * breath);
     if (!reduce){
-      bigGroup.rotation.y = Math.sin(t*0.3) * 0.32 * I;
-      bigGroup.rotation.x = Math.sin(t*0.23) * 0.12 * I;
+      bigGroup.rotation.y = Math.sin(s*0.28)       * lerp(0.15,0.5,ramp(s,3,16)) * I;
+      bigGroup.rotation.x = Math.sin(s*0.21 + 1.0) * lerp(0.06,0.16,ramp(s,3,16)) * I;
     }
 
     // twinklers
@@ -578,9 +598,16 @@
       sparkMesh.instanceMatrix.needsUpdate = true;
     }
 
-    // drifting embers (always alive; grow & speed up on unlock)
-    const eScale = 0.35 + 0.65*I;
-    const eSpeed = (0.4 + 0.6*I) * (reduce ? 0.35 : 1);
+    // drifting embers — always alive, and they gush during the big beats
+    let eScale = 0.35 + 0.65*I;
+    let eSpeed = 0.4 + 0.6*I;
+    if (!reduce){
+      eSpeed += 0.9*gpulse(s,14,1.6) + 0.7*gpulse(s,24,1.8) + 0.5*ramp(s,26,34);
+      eScale += 0.25*gpulse(s,14,2.0) + 0.20*gpulse(s,24,2.2);
+    } else {
+      eSpeed *= 0.35;
+    }
+    eScale = Math.min(eScale, 1.45);
     for (let i=0;i<EMBERS;i++){
       const e = em[i];
       e.y += e.speed * eSpeed * dt;
@@ -598,12 +625,14 @@
     // stars drift ever so slightly
     stars.rotation.y = t * 0.01;
 
-    // reveal / hide the words
+    // reveal the words (lines cascade via CSS); offer "again" once it's settled
     if (I > 0.82) messageEl.classList.add('show'); else messageEl.classList.remove('show');
-    if (I > 0.96 && state.target === 1) replayEl.classList.add('show');
+    if (state.target === 1 && s > 9) replayEl.classList.add('show');
     if (state.backToIntro && I < 0.05){
       state.backToIntro = false;
+      state.showTime = 0;
       introEl.classList.remove('gone');
+      replayEl.classList.remove('show');
       keyEl.value = '';
       setTimeout(()=>{ try{ keyEl.focus(); }catch(e){} }, 300);
     }
