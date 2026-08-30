@@ -164,6 +164,26 @@
     color:var(--ink); border-bottom-color:var(--rose); outline:none;
   }
 
+  /* ── the poem line beside each shape ── */
+  .caption{
+    position:fixed; left:50%; bottom:12vh; transform:translate(-50%, 12px);
+    z-index:2; pointer-events:none; width:min(88vw, 42rem); text-align:center;
+    opacity:0; transition:opacity .9s ease, transform .9s ease;
+  }
+  .caption::before{
+    content:""; position:absolute; left:50%; top:50%;
+    width:160%; height:340%; transform:translate(-50%,-50%);
+    background:radial-gradient(closest-side, rgba(10,4,16,0.5), transparent 72%);
+    z-index:-1;
+  }
+  .caption span{
+    font-family:var(--serif); font-style:italic; font-weight:300;
+    font-size:clamp(1.3rem, 3.6vw, 2rem); line-height:1.35;
+    letter-spacing:.015em; color:var(--cream);
+    text-shadow:0 0 26px rgba(255,150,190,.5), 0 0 6px rgba(255,210,225,.35);
+  }
+  .caption.show{ opacity:1; transform:translate(-50%, 0); }
+
   :focus-visible{ outline:2px solid var(--rose); outline-offset:4px; border-radius:2px; }
 
   @media (prefers-reduced-motion: reduce){
@@ -206,6 +226,8 @@
 
   <button class="replay" id="replay" type="button">again</button>
 
+  <div class="caption" id="caption" aria-hidden="true"><span id="captionText"></span></div>
+
   <script type="importmap">
   {
     "imports": {
@@ -244,6 +266,17 @@
     // Any of these phrases will unlock the surprise (lowercase)
     secretWords: [
       "i love you", "iloveyou", "i love u", "love you", "ily", "i adore you"
+    ],
+
+    // A short poem — one line appears beside each shape as it fully forms.
+    // Order: sparks, galaxy, helix, ring, burst. Use "" to skip one.
+    // (The final heart keeps the message above; it has no line here.)
+    sceneLines: [
+      "Before you, I was scattered light,",
+      "you spun my world into a galaxy,",
+      "two souls, forever intertwined,",
+      "one ring to hold my every promise,",
+      "a heart too full to hold inside —"
     ]
   };
   /* ═══════════════════════════════════════════════════════════════
@@ -453,11 +486,11 @@
 
   // when each scene begins (its morph-in) and how long the morph lasts, in seconds
   const TIMING = [
-    { trans:2.5, hold:3.0 },   // dust
-    { trans:2.5, hold:3.5 },   // galaxy
-    { trans:2.5, hold:4.0 },   // helix
-    { trans:2.5, hold:3.5 },   // ring
-    { trans:2.2, hold:1.8 },   // burst
+    { trans:2.5, hold:3.4 },   // dust
+    { trans:2.5, hold:3.4 },   // galaxy
+    { trans:2.5, hold:3.8 },   // helix
+    { trans:2.5, hold:3.6 },   // ring
+    { trans:2.2, hold:3.2 },   // burst
     { trans:3.0, hold:9999 },  // heart (holds, then idles forever)
   ];
   const startTime = [0];
@@ -539,6 +572,8 @@
   const messageEl= document.getElementById('message');
   const replayEl = document.getElementById('replay');
   const keyEl    = document.getElementById('key');
+  const captionEl   = document.getElementById('caption');
+  const captionText = document.getElementById('captionText');
 
   function tryUnlock(){
     if (isSecret(keyEl.value)){
@@ -577,6 +612,8 @@
     const b2 = Math.exp(-Math.pow((p - 0.20)/0.07, 2)) * 0.75;
     return b1 + b2;
   }
+
+  let capShown = -2;   // which poem line is on screen right now
 
   // ---------- main loop ----------
   function animate(){
@@ -706,6 +743,22 @@
     emberMesh.instanceMatrix.needsUpdate = true;
 
     stars.rotation.y = t * 0.01;
+
+    // ── a line of the poem appears beside each shape once it's fully formed ──
+    let capIdx = (!state.returning && c < HEART && p >= 0.999) ? c : -1;
+    if (capIdx !== -1){
+      const line = CONFIG.sceneLines[capIdx];
+      if (!(line && line.trim())) capIdx = -1;
+    }
+    if (capIdx !== capShown){
+      capShown = capIdx;
+      if (capIdx === -1){
+        captionEl.classList.remove('show');
+      } else {
+        captionText.textContent = CONFIG.sceneLines[capIdx];
+        captionEl.classList.add('show');
+      }
+    }
 
     // ── reveal the words once the heart has formed; offer "again" a bit later ──
     const show = (c === HEART && st > 1.2 && !state.returning);
