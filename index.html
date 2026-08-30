@@ -52,6 +52,8 @@
     display:grid; place-items:center; text-align:center;
     padding:6vh 8vw; pointer-events:none;
   }
+  /* both screens share one centered cell, so each sits dead-center */
+  .stage > section{ grid-area:1 / 1; align-self:center; justify-self:center; }
 
   /* ── intro ── */
   .intro{
@@ -72,11 +74,11 @@
 
   .key-input{
     font-family:var(--serif); font-style:italic; font-weight:300;
-    font-size:clamp(1.5rem, 5.5vw, 2.6rem);
+    font-size:clamp(1.4rem, 4.5vw, 2.1rem);
     text-align:center; color:var(--cream);
     background:transparent; border:none;
     border-bottom:1px solid var(--ink-faint);
-    width:min(84vw, 15ch); padding:.28em .2em .22em;
+    width:min(92vw, 28rem); max-width:100%; padding:.28em .4em .22em;
     caret-color:var(--rose); letter-spacing:.01em;
     transition:border-color .5s ease, box-shadow .5s ease;
   }
