@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>a little secret</title>
+<meta name="description" content="A small gift, made with love." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400&family=Ephesis&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    /* ── twilight palette ── */
+    --bg-0:#04020a;
+    --bg-1:#120a20;
+    --bg-2:#1d0b24;
+    --rose:#ff5d8f;
+    --blush:#ff9ec7;
+    --gold:#ffd4a3;
+    --cream:#fff0f5;
+    --ink:      rgba(255,240,245,0.94);
+    --ink-soft: rgba(255,240,245,0.55);
+    --ink-faint:rgba(255,240,245,0.30);
+    --script:'Ephesis', cursive;
+    --serif:'Cormorant Garamond', Georgia, serif;
+  }
+
+  *{ box-sizing:border-box; }
+  html,body{ height:100%; margin:0; }
+  body{
+    background:
+      radial-gradient(120% 90% at 50% 115%, rgba(120,30,70,0.45), transparent 60%),
+      linear-gradient(180deg, var(--bg-0) 0%, var(--bg-1) 55%, var(--bg-2) 100%);
+    color:var(--ink);
+    font-family:var(--serif);
+    overflow:hidden;
+    -webkit-font-smoothing:antialiased;
+    -webkit-tap-highlight-color:transparent;
+  }
+
+  /* ── layers ── */
+  #scene{ position:fixed; inset:0; z-index:0; }
+  #scene canvas{ display:block; width:100%; height:100%; }
+
+  .vignette{
+    position:fixed; inset:0; z-index:1; pointer-events:none;
+    background:radial-gradient(130% 120% at 50% 45%, transparent 55%, rgba(0,0,0,0.55) 100%);
+  }
+
+  .stage{
+    position:fixed; inset:0; z-index:2;
+    display:grid; place-items:center; text-align:center;
+    padding:6vh 8vw; pointer-events:none;
+  }
+
+  /* ── intro ── */
+  .intro{
+    display:flex; flex-direction:column; align-items:center; gap:2.1rem;
+    pointer-events:auto;
+    transition:opacity 1.1s ease, transform 1.1s ease, filter 1.1s ease;
+  }
+  .intro.gone{
+    opacity:0; transform:translateY(-14px) scale(.98); filter:blur(6px);
+    pointer-events:none;
+  }
+
+  .eyebrow{
+    margin:0; font-size:.72rem; font-weight:500;
+    letter-spacing:.55em; text-transform:uppercase;
+    color:var(--ink-faint); padding-left:.55em;
+  }
+
+  .key-input{
+    font-family:var(--serif); font-style:italic; font-weight:300;
+    font-size:clamp(1.5rem, 5.5vw, 2.6rem);
+    text-align:center; color:var(--cream);
+    background:transparent; border:none;
+    border-bottom:1px solid var(--ink-faint);
+    width:min(84vw, 15ch); padding:.28em .2em .22em;
+    caret-color:var(--rose); letter-spacing:.01em;
+    transition:border-color .5s ease, box-shadow .5s ease;
+  }
+  .key-input::placeholder{ color:var(--ink-faint); font-style:italic; }
+  .key-input:focus{
+    outline:none;
+    border-bottom-color:var(--rose);
+    box-shadow:0 14px 30px -22px var(--rose);
+  }
+  .key-input.nope{ animation:nudge .5s ease; }
+  @keyframes nudge{
+    0%,100%{ transform:translateX(0); }
+    18%{ transform:translateX(-9px); }
+    38%{ transform:translateX(8px); }
+    58%{ transform:translateX(-5px); }
+    78%{ transform:translateX(4px); }
+  }
+
+  .hint-wrap{ display:flex; flex-direction:column; gap:.35rem; }
+  .hint{
+    margin:0; font-style:italic; font-weight:300;
+    font-size:clamp(.95rem, 2.6vw, 1.15rem);
+    color:var(--ink-soft); transition:color .4s ease;
+  }
+  .hint.flash{ color:var(--rose); }
+  .cue{
+    margin:0; font-size:.7rem; letter-spacing:.4em; text-transform:uppercase;
+    color:var(--ink-faint); padding-left:.4em;
+  }
+
+  /* ── revealed message ── */
+  .message{
+    position:relative; pointer-events:none;
+    opacity:0; transform:translateY(18px);
+    transition:opacity 1.4s ease, transform 1.4s ease;
+  }
+  .message::before{
+    content:""; position:absolute; left:50%; top:52%;
+    width:140%; height:220%; transform:translate(-50%,-50%);
+    background:radial-gradient(closest-side, rgba(10,4,16,0.55), transparent 72%);
+    z-index:-1; pointer-events:none;
+  }
+  .message.show{ opacity:1; transform:translateY(0); }
+
+  .m-eyebrow{
+    font-size:clamp(.7rem,2vw,.82rem); letter-spacing:.5em;
+    text-transform:uppercase; color:var(--gold);
+    opacity:0; transform:translateY(10px);
+    transition:opacity 1s ease .15s, transform 1s ease .15s;
+  }
+  .m-main{
+    font-family:var(--script); font-weight:400;
+    font-size:clamp(3.4rem, 15vw, 9rem); line-height:.95;
+    color:var(--cream); margin:.12em 0 .04em;
+    text-shadow:0 0 42px rgba(255,120,170,.55), 0 0 8px rgba(255,200,220,.4);
+    opacity:0; transform:translateY(18px);
+    transition:opacity 1.3s ease .35s, transform 1.3s ease .35s;
+  }
+  .m-sub{
+    font-style:italic; font-weight:300;
+    font-size:clamp(1.05rem, 3.4vw, 1.7rem);
+    letter-spacing:.03em; color:var(--ink);
+    opacity:0; transform:translateY(14px);
+    transition:opacity 1.1s ease .75s, transform 1.1s ease .75s;
+  }
+  .message.show .m-eyebrow,
+  .message.show .m-main,
+  .message.show .m-sub{ opacity:1; transform:translateY(0); }
+
+  /* ── replay ── */
+  .replay{
+    position:fixed; left:50%; bottom:5.2vh; transform:translateX(-50%);
+    z-index:3; pointer-events:none;
+    font-family:var(--serif); font-size:.74rem; font-weight:500;
+    letter-spacing:.42em; text-transform:uppercase;
+    color:var(--ink-faint); background:none; border:none; cursor:pointer;
+    padding:.6em .4em .4em; padding-left:.82em;
+    border-bottom:1px solid transparent;
+    opacity:0; transition:opacity 1s ease .4s, color .4s ease, border-color .4s ease;
+  }
+  .replay.show{ opacity:1; pointer-events:auto; }
+  .replay:hover, .replay:focus-visible{
+    color:var(--ink); border-bottom-color:var(--rose); outline:none;
+  }
+
+  :focus-visible{ outline:2px solid var(--rose); outline-offset:4px; border-radius:2px; }
+
+  @media (prefers-reduced-motion: reduce){
+    *{ transition-duration:.35s !important; }
+    .key-input.nope{ animation:none; }
+  }
+</style>
+</head>
+<body>
+  <div id="scene" aria-hidden="true"></div>
+  <div class="vignette" aria-hidden="true"></div>
+
+  <main class="stage">
+    <section class="intro" id="intro">
+      <p class="eyebrow" id="introEyebrow">a little secret</p>
+      <input
+        id="key"
+        class="key-input"
+        type="text"
+        autocomplete="off"
+        autocapitalize="off"
+        autocorrect="off"
+        spellcheck="false"
+        aria-label="Type the magic words to reveal the surprise"
+        placeholder="type the magic words…"
+      />
+      <div class="hint-wrap">
+        <p class="hint" id="hint"></p>
+        <p class="cue">press enter</p>
+      </div>
+    </section>
+
+    <section class="message" id="message" aria-live="polite">
+      <div class="m-eyebrow" id="mEyebrow"></div>
+      <div class="m-main" id="mMain"></div>
+      <div class="m-sub" id="mSub"></div>
+    </section>
+  </main>
+
+  <button class="replay" id="replay" type="button">again</button>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <script type="module">
+  import * as THREE from 'three';
+  import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+  import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+  import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+  /* ═══════════════════════════════════════════════════════════════
+     ❤  YOUR SETTINGS  —  change the text in quotes to make it yours
+     ═══════════════════════════════════════════════════════════════ */
+  const CONFIG = {
+    // Shown small & gold, just above the big message ("FOR ___")
+    recipientName: "my love",
+
+    // The big flowing script line
+    messageMain:   "I love you",
+
+    // The smaller line underneath
+    messageSub:    "today, tomorrow, and always",
+
+    // Little line on the first screen
+    introEyebrow:  "a little secret",
+
+    // The gentle hint under the input
+    hint:          "psst… just tell me how you feel",
+    showHint:      true,
+
+    // Any of these phrases will unlock the surprise (lowercase)
+    secretWords: [
+      "i love you", "iloveyou", "i love u", "love you", "ily", "i adore you"
+    ]
+  };
+  /* ═══════════════════════════════════════════════════════════════
+     You can stop here — everything below just makes the magic. ✨
+     (Colours to tweak are in the two palettes a little further down.)
+     ═══════════════════════════════════════════════════════════════ */
+
+  // ---------- fill the text in ----------
+  document.getElementById('introEyebrow').textContent = CONFIG.introEyebrow;
+  const hintEl = document.getElementById('hint');
+  hintEl.textContent = CONFIG.showHint ? CONFIG.hint : "when you're ready…";
+  document.getElementById('mMain').textContent = CONFIG.messageMain;
+  document.getElementById('mSub').textContent  = CONFIG.messageSub;
+  const mEyebrow = document.getElementById('mEyebrow');
+  if (CONFIG.recipientName && CONFIG.recipientName.trim()){
+    mEyebrow.textContent = "for " + CONFIG.recipientName.trim();
+  } else {
+    mEyebrow.style.display = "none";
+  }
+  document.title = CONFIG.recipientName ? ("for " + CONFIG.recipientName) : "a little secret";
+
+  // ---------- small helpers ----------
+  const clamp01 = x => Math.min(1, Math.max(0, x));
+  const lerp   = (a,b,t) => a + (b-a)*t;
+  const smoother = x => { x = clamp01(x); return x*x*x*(x*(x*6-15)+10); };
+  const rand = (a,b) => a + Math.random()*(b-a);
+  const norm = s => s.toLowerCase().normalize('NFKD')
+                     .replace(/[^a-z0-9\s]/g,'').replace(/\s+/g,' ').trim();
+
+  const secretSet = new Set(CONFIG.secretWords.map(norm));
+  const isSecret = v => secretSet.has(norm(v));
+
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const LOW = window.matchMedia('(max-width: 768px)').matches ||
+              (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4);
+
+  // detail counts
+  const BIG     = LOW ? 1000 : 1900;   // hearts that form the big heart
+  const EMBERS  = LOW ?  260 :  620;   // drifting hearts
+  const SPARKLE = LOW ?   32 :   60;   // bright twinklers inside the heart
+  const STARS   = LOW ?  160 :  320;   // faint background dust
+
+  // ---------- colour palettes (deep → light) ----------
+  const HEART_PALETTE = ["#ff4d84","#ff7ba6","#ffa8c4","#ffd39a","#fff2f7"];
+  const EMBER_PALETTE = ["#ff5d8f","#ff8fb0","#ffc0d2","#ffd9a6","#fff0f5"];
+  const toColor = (hex, jitter=0.14) => {
+    const c = new THREE.Color(hex);
+    const m = 1 + rand(-jitter, jitter);
+    c.multiplyScalar(m);
+    return c;
+  };
+
+  // ---------- renderer / scene / camera ----------
+  const container = document.getElementById('scene');
+  const renderer = new THREE.WebGLRenderer({ antialias:true, powerPreference:'high-performance' });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, LOW ? 1.5 : 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  container.appendChild(renderer.domElement);
+
+  const scene = new THREE.Scene();
+  scene.background = makeBackground();
+  scene.fog = new THREE.FogExp2(new THREE.Color('#140a22'), 0.05);
+
+  const camera = new THREE.PerspectiveCamera(55, window.innerWidth/window.innerHeight, 0.1, 100);
+  const CAM_REST = 9, CAM_START = 10.6, CAM_Y = 0.35;
+  camera.position.set(0, CAM_Y, CAM_START);
+  camera.lookAt(0, 0, 0);
+
+  function makeBackground(){
+    const c = document.createElement('canvas'); c.width = 64; c.height = 256;
+    const g = c.getContext('2d');
+    const lin = g.createLinearGradient(0,0,0,256);
+    lin.addColorStop(0.0,'#04020a');
+    lin.addColorStop(0.5,'#120a20');
+    lin.addColorStop(1.0,'#1d0b24');
+    g.fillStyle = lin; g.fillRect(0,0,64,256);
+    const rad = g.createRadialGradient(32,205,8, 32,205,155);
+    rad.addColorStop(0,'rgba(125,32,72,0.55)');
+    rad.addColorStop(1,'rgba(125,32,72,0)');
+    g.fillStyle = rad; g.fillRect(0,0,64,256);
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return tex;
+  }
+
+  // ---------- one little heart, as geometry ----------
+  function makeHeartGeometry(){
+    const s = new THREE.Shape();
+    s.moveTo(5,5);
+    s.bezierCurveTo(5,5, 4,0, 0,0);
+    s.bezierCurveTo(-6,0, -6,7, -6,7);
+    s.bezierCurveTo(-6,11, -3,15.4, 5,19);
+    s.bezierCurveTo(12,15.4, 16,11, 16,7);
+    s.bezierCurveTo(16,7, 16,0, 10,0);
+    s.bezierCurveTo(7,0, 5,5, 5,5);
+    const geo = new THREE.ExtrudeGeometry(s, {
+      depth:2, bevelEnabled:true, bevelThickness:1.1, bevelSize:1.1,
+      bevelSegments:2, steps:1, curveSegments:10
+    });
+    geo.rotateZ(Math.PI);   // flip so the point is at the bottom
+    geo.center();
+    geo.scale(0.05, 0.05, 0.05);
+    return geo;
+  }
+  const heartGeo = makeHeartGeometry();
+
+  const baseMat = () => new THREE.MeshBasicMaterial({ color:0xffffff, fog:true, toneMapped:true });
+
+  // ---------- points inside a real heart shape (for the big formation) ----------
+  function heartFieldPoints(count){
+    const pts = [];
+    while (pts.length < count){
+      const x = rand(-1.55, 1.55);
+      const y = rand(-1.5, 1.75);
+      const a = x*x + y*y - 1;
+      const f = a*a*a - x*x*y*y*y;      // <= 0 means inside the heart
+      if (f <= 0){
+        const d = Math.max(0, -f);
+        const zmax = Math.pow(Math.min(d,1), 0.5) * 0.55 + 0.05;
+        const z = rand(-1,1) * zmax;
+        pts.push(new THREE.Vector3(x, y, z));
+      }
+    }
+    return pts;
+  }
+
+  // ---------- the big heart (assembles on unlock) ----------
+  const HEART_SCALE = 2.4;
+  const bigGroup = new THREE.Group();
+  bigGroup.position.y = -0.25;
+  scene.add(bigGroup);
+
+  const bigMesh = new THREE.InstancedMesh(heartGeo, baseMat(), BIG);
+  bigMesh.frustumCulled = false;
+  bigGroup.add(bigMesh);
+
+  const targets = [], starts = [], rots = [], sizes = [], delays = [];
+  const field = heartFieldPoints(BIG);
+  const ymin = -1.5, ymax = 1.75;
+  for (let i=0;i<BIG;i++){
+    const p = field[i].clone().multiplyScalar(HEART_SCALE);
+    targets.push(p);
+    // scattered starting point in a wide sphere
+    const dir = new THREE.Vector3(rand(-1,1),rand(-1,1),rand(-1,1)).normalize();
+    starts.push(dir.multiplyScalar(rand(6,11)));
+    rots.push(new THREE.Euler(rand(-1,1),rand(-1,1),rand(-1,1)));
+    sizes.push(rand(0.10, 0.19));
+    delays.push(Math.random()*0.45);
+    // colour: deeper at the bottom, lighter toward the top, brighter up front
+    const t = clamp01((field[i].y - ymin)/(ymax - ymin));
+    let idx = Math.floor(t*(HEART_PALETTE.length-1) + rand(-0.4,1.1));
+    idx = Math.max(0, Math.min(HEART_PALETTE.length-1, idx));
+    const col = toColor(HEART_PALETTE[idx]);
+    if (field[i].z > 0) col.multiplyScalar(1.08);
+    bigMesh.setColorAt(i, col);
+  }
+  bigMesh.instanceColor.needsUpdate = true;
+
+  // ---------- bright twinklers sitting on the heart ----------
+  const sparkMesh = new THREE.InstancedMesh(heartGeo, baseMat(), SPARKLE);
+  sparkMesh.frustumCulled = false;
+  bigGroup.add(sparkMesh);
+  const sparkPos = [], sparkSize = [], sparkPhase = [], sparkSpeed = [];
+  for (let i=0;i<SPARKLE;i++){
+    const p = targets[Math.floor(Math.random()*targets.length)];
+    sparkPos.push(p);
+    sparkSize.push(rand(0.16, 0.28));
+    sparkPhase.push(rand(0, Math.PI*2));
+    sparkSpeed.push(rand(1.4, 3.0));
+    sparkMesh.setColorAt(i, toColor(Math.random()<0.6 ? "#fff2f7" : "#ffd9a6", 0.06));
+  }
+  sparkMesh.instanceColor.needsUpdate = true;
+
+  // ---------- drifting embers (always present) ----------
+  const emberMesh = new THREE.InstancedMesh(heartGeo, baseMat(), EMBERS);
+  emberMesh.frustumCulled = false;
+  scene.add(emberMesh);
+  const em = [];
+  for (let i=0;i<EMBERS;i++){
+    em.push({
+      x: rand(-8,8), y: rand(-6,8), z: rand(-4.5, 2.5),
+      size: rand(0.07, 0.34),
+      speed: rand(0.35, 1.05),
+      swayAmp: rand(0.15, 0.7), swayFreq: rand(0.3, 1.1), phase: rand(0,Math.PI*2),
+      spin: rand(-0.9, 0.9), rot: rand(0, Math.PI*2)
+    });
+    emberMesh.setColorAt(i, toColor(EMBER_PALETTE[Math.floor(Math.random()*EMBER_PALETTE.length)]));
+  }
+  emberMesh.instanceColor.needsUpdate = true;
+
+  // ---------- faint background dust ----------
+  const starGeo = new THREE.BufferGeometry();
+  const sp = new Float32Array(STARS*3);
+  for (let i=0;i<STARS;i++){
+    sp[i*3]   = rand(-16,16);
+    sp[i*3+1] = rand(-10,12);
+    sp[i*3+2] = rand(-16,-4);
+  }
+  starGeo.setAttribute('position', new THREE.BufferAttribute(sp,3));
+  const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({
+    color:0xffe6f0, size:0.045, sizeAttenuation:true,
+    transparent:true, opacity:0.55, fog:false, depthWrite:false
+  }));
+  scene.add(stars);
+
+  // ---------- bloom / glow ----------
+  const composer = new EffectComposer(renderer);
+  composer.addPass(new RenderPass(scene, camera));
+  const bloom = new UnrealBloomPass(
+    new THREE.Vector2(window.innerWidth, window.innerHeight),
+    0.55,                 // strength (ramps up on unlock)
+    LOW ? 0.7 : 0.85,     // radius
+    0.20                  // threshold
+  );
+  composer.addPass(bloom);
+
+  // ---------- state ----------
+  const state = { intensity: reduce ? 0 : 0, target: 0, unlocked:false, backToIntro:false };
+  const dummy = new THREE.Object3D();
+  const clock = new THREE.Clock();
+  const pointer = { x:0, y:0, tx:0, ty:0 };
+
+  window.addEventListener('pointermove', e => {
+    pointer.tx = (e.clientX / window.innerWidth  - 0.5) * 2;
+    pointer.ty = (e.clientY / window.innerHeight - 0.5) * 2;
+  }, { passive:true });
+
+  // ---------- interaction ----------
+  const introEl  = document.getElementById('intro');
+  const messageEl= document.getElementById('message');
+  const replayEl = document.getElementById('replay');
+  const keyEl    = document.getElementById('key');
+
+  function tryUnlock(){
+    if (isSecret(keyEl.value)){
+      state.target = 1; state.unlocked = true; state.backToIntro = false;
+      if (reduce) state.intensity = 1;              // no big fly-in for reduced motion
+      introEl.classList.add('gone');
+      keyEl.blur();
+    } else {
+      keyEl.classList.remove('nope'); void keyEl.offsetWidth; keyEl.classList.add('nope');
+      hintEl.classList.add('flash');
+      setTimeout(()=>hintEl.classList.remove('flash'), 900);
+    }
+  }
+  keyEl.addEventListener('keydown', e => { if (e.key === 'Enter'){ e.preventDefault(); tryUnlock(); } });
+
+  replayEl.addEventListener('click', () => {
+    state.target = 0; state.unlocked = false; state.backToIntro = true;
+    messageEl.classList.remove('show');
+    replayEl.classList.remove('show');
+  });
+
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth/window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    composer.setSize(window.innerWidth, window.innerHeight);
+    bloom.setSize(window.innerWidth, window.innerHeight);
+  });
+
+  setTimeout(()=>{ try{ keyEl.focus(); }catch(e){} }, 600);
+
+  // ---------- heartbeat (lub-dub) ----------
+  function heartbeat(t){
+    const period = 1.15;
+    const p = (t % period) / period;
+    const b1 = Math.exp(-Math.pow((p - 0.00)/0.06, 2));
+    const b2 = Math.exp(-Math.pow((p - 0.20)/0.07, 2)) * 0.75;
+    return b1 + b2;
+  }
+
+  // ---------- main loop ----------
+  let lastI = -1;
+  function animate(){
+    requestAnimationFrame(animate);
+    const dt = Math.min(clock.getDelta(), 0.05);
+    const t  = clock.elapsedTime;
+
+    // ease the intensity toward its target
+    if (!reduce){
+      state.intensity += (state.target - state.intensity) * Math.min(1, dt*1.8);
+    } else {
+      state.intensity = state.target ? 1 : lerp(state.intensity, 0, Math.min(1,dt*3));
+    }
+    const I = state.intensity;
+
+    // glow + camera respond to intensity
+    bloom.strength = lerp(0.5, 1.25, I);
+    const camZ = lerp(CAM_START, CAM_REST, smoother(I));
+    pointer.x = lerp(pointer.x, pointer.tx, dt*2.2);
+    pointer.y = lerp(pointer.y, pointer.ty, dt*2.2);
+    const par = reduce ? 0 : 1;
+    camera.position.set(pointer.x*1.2*par, CAM_Y - pointer.y*0.7*par, camZ);
+    camera.lookAt(0, 0, 0);
+
+    // big heart: assemble while intensity is changing, then rest (cheap)
+    bigMesh.visible = I > 0.015;
+    sparkMesh.visible = I > 0.35;
+    if (Math.abs(I - lastI) > 0.0006 || I > 0.999 && lastI <= 0.999){
+      for (let i=0;i<BIG;i++){
+        const pr = smoother((I - delays[i]) / 0.55);
+        const s  = sizes[i] * pr;
+        dummy.position.lerpVectors(starts[i], targets[i], pr);
+        dummy.rotation.copy(rots[i]);
+        dummy.scale.setScalar(s);
+        dummy.updateMatrix();
+        bigMesh.setMatrixAt(i, dummy.matrix);
+      }
+      bigMesh.instanceMatrix.needsUpdate = true;
+    }
+    lastI = I;
+
+    // whole-heart heartbeat + gentle sway (never spins fully edge-on)
+    const beat = reduce ? 0.02 : 0.06;
+    const pulse = 1 + heartbeat(t) * beat * I;
+    bigGroup.scale.setScalar(pulse);
+    if (!reduce){
+      bigGroup.rotation.y = Math.sin(t*0.3) * 0.32 * I;
+      bigGroup.rotation.x = Math.sin(t*0.23) * 0.12 * I;
+    }
+
+    // twinklers
+    if (sparkMesh.visible){
+      for (let i=0;i<SPARKLE;i++){
+        const tw = 0.55 + 0.5*Math.sin(t*sparkSpeed[i] + sparkPhase[i]);
+        dummy.position.copy(sparkPos[i]);
+        dummy.rotation.set(0,0,sparkPhase[i]);
+        dummy.scale.setScalar(sparkSize[i]*tw*I);
+        dummy.updateMatrix();
+        sparkMesh.setMatrixAt(i, dummy.matrix);
+      }
+      sparkMesh.instanceMatrix.needsUpdate = true;
+    }
+
+    // drifting embers (always alive; grow & speed up on unlock)
+    const eScale = 0.35 + 0.65*I;
+    const eSpeed = (0.4 + 0.6*I) * (reduce ? 0.35 : 1);
+    for (let i=0;i<EMBERS;i++){
+      const e = em[i];
+      e.y += e.speed * eSpeed * dt;
+      e.rot += (reduce ? 0 : e.spin) * dt;
+      if (e.y > 7.6){ e.y = -6.6; e.x = rand(-8,8); e.z = rand(-4.5,2.5); }
+      const x = e.x + (reduce ? 0 : Math.sin(t*e.swayFreq + e.phase) * e.swayAmp);
+      dummy.position.set(x, e.y, e.z);
+      dummy.rotation.set(0, 0, e.rot);
+      dummy.scale.setScalar(e.size * eScale);
+      dummy.updateMatrix();
+      emberMesh.setMatrixAt(i, dummy.matrix);
+    }
+    emberMesh.instanceMatrix.needsUpdate = true;
+
+    // stars drift ever so slightly
+    stars.rotation.y = t * 0.01;
+
+    // reveal / hide the words
+    if (I > 0.82) messageEl.classList.add('show'); else messageEl.classList.remove('show');
+    if (I > 0.96 && state.target === 1) replayEl.classList.add('show');
+    if (state.backToIntro && I < 0.05){
+      state.backToIntro = false;
+      introEl.classList.remove('gone');
+      keyEl.value = '';
+      setTimeout(()=>{ try{ keyEl.focus(); }catch(e){} }, 300);
+    }
+
+    composer.render();
+  }
+  animate();
+  </script>
+</body>
+</html>
