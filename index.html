@@ -270,7 +270,8 @@
   const lerp   = (a,b,t) => a + (b-a)*t;
   const smoother = x => { x = clamp01(x); return x*x*x*(x*(x*6-15)+10); };
   const rand = (a,b) => a + Math.random()*(b-a);
-  // timeline shapes, in seconds since the words are typed:
+  const randn = () => { let u=0,v=0; while(!u)u=Math.random(); while(!v)v=Math.random();
+                        return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v); };
   const ramp  = (t,a,b) => smoother((t-a)/(b-a));          // 0 before a → 1 after b
   const gpulse= (t,c,w) => Math.exp(-Math.pow((t-c)/w,2)); // a soft bump centred at c
   const norm = s => s.toLowerCase().normalize('NFKD')
@@ -284,18 +285,16 @@
               (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4);
 
   // detail counts
-  const BIG     = LOW ? 1000 : 1900;   // hearts that form the big heart
-  const EMBERS  = LOW ?  260 :  620;   // drifting hearts
-  const SPARKLE = LOW ?   32 :   60;   // bright twinklers inside the heart
-  const STARS   = LOW ?  160 :  320;   // faint background dust
+  const N      = LOW ? 850  : 1500;   // hearts that dance through every scene
+  const EMBERS = LOW ? 200  : 500;    // ambient drifting hearts in the background
+  const STARS  = LOW ? 150  : 300;    // faint background dust
 
   // ---------- colour palettes (deep → light) ----------
   const HEART_PALETTE = ["#ff4d84","#ff7ba6","#ffa8c4","#ffd39a","#fff2f7"];
   const EMBER_PALETTE = ["#ff5d8f","#ff8fb0","#ffc0d2","#ffd9a6","#fff0f5"];
   const toColor = (hex, jitter=0.14) => {
     const c = new THREE.Color(hex);
-    const m = 1 + rand(-jitter, jitter);
-    c.multiplyScalar(m);
+    c.multiplyScalar(1 + rand(-jitter, jitter));
     return c;
   };
 
@@ -308,11 +307,11 @@
 
   const scene = new THREE.Scene();
   scene.background = makeBackground();
-  scene.fog = new THREE.FogExp2(new THREE.Color('#140a22'), 0.05);
+  scene.fog = new THREE.FogExp2(new THREE.Color('#140a22'), 0.042);
 
   const camera = new THREE.PerspectiveCamera(55, window.innerWidth/window.innerHeight, 0.1, 100);
-  const CAM_REST = 9, CAM_START = 10.6, CAM_Y = 0.35;
-  camera.position.set(0, CAM_Y, CAM_START);
+  const CAM_REST = 9, CAM_Y = 0.3;
+  camera.position.set(0, CAM_Y, 10.6);
   camera.lookAt(0, 0, 0);
 
   function makeBackground(){
@@ -346,81 +345,148 @@
       depth:2, bevelEnabled:true, bevelThickness:1.1, bevelSize:1.1,
       bevelSegments:2, steps:1, curveSegments:10
     });
-    geo.rotateZ(Math.PI);   // flip so the point is at the bottom
+    geo.rotateZ(Math.PI);   // point at the bottom
     geo.center();
     geo.scale(0.05, 0.05, 0.05);
     return geo;
   }
   const heartGeo = makeHeartGeometry();
-
   const baseMat = () => new THREE.MeshBasicMaterial({ color:0xffffff, fog:true, toneMapped:true });
 
-  // ---------- points inside a real heart shape (for the big formation) ----------
-  function heartFieldPoints(count){
-    const pts = [];
-    while (pts.length < count){
-      const x = rand(-1.55, 1.55);
-      const y = rand(-1.5, 1.75);
-      const a = x*x + y*y - 1;
-      const f = a*a*a - x*x*y*y*y;      // <= 0 means inside the heart
-      if (f <= 0){
-        const d = Math.max(0, -f);
-        const zmax = Math.pow(Math.min(d,1), 0.5) * 0.55 + 0.05;
-        const z = rand(-1,1) * zmax;
-        pts.push(new THREE.Vector3(x, y, z));
+  // ═══════════════ the scene formations (each returns N×3 positions) ═══════════════
+  const g = Math.PI * (3 - Math.sqrt(5));                 // golden angle
+  const fibDir = (i) => {                                 // even points on a unit sphere
+    const y = 1 - (i / (N - 1)) * 2;
+    const r = Math.sqrt(Math.max(0, 1 - y*y));
+    const th = g * i;
+    return [Math.cos(th)*r, y, Math.sin(th)*r];
+  };
+
+  function fCenter(){                                     // collapsed spark at the middle
+    const a = new Float32Array(N*3);
+    for (let i=0;i<N;i++){ a[i*3]=randn()*0.12; a[i*3+1]=randn()*0.12; a[i*3+2]=randn()*0.12; }
+    return a;
+  }
+  function fDust(){                                       // soft spherical cloud
+    const a = new Float32Array(N*3);
+    for (let i=0;i<N;i++){
+      const r = 4.2*Math.cbrt(Math.random());
+      let dx=randn(), dy=randn(), dz=randn();
+      const m = r/Math.hypot(dx,dy,dz);
+      a[i*3]=dx*m; a[i*3+1]=dy*m; a[i*3+2]=dz*m;
+    }
+    return a;
+  }
+  function fGalaxy(){                                     // 3-arm spiral in the XY plane
+    const a = new Float32Array(N*3), arms=3;
+    for (let i=0;i<N;i++){
+      const rad = 4.4*Math.sqrt(Math.random());
+      const ang = (i%arms)*(2*Math.PI/arms) + rad*0.85 + randn()*0.12;
+      a[i*3]   = Math.cos(ang)*rad;
+      a[i*3+1] = Math.sin(ang)*rad;
+      a[i*3+2] = randn()*(0.12 + 0.16*(1 - rad/4.4));
+    }
+    return a;
+  }
+  function fHelix(){                                      // two intertwining strands
+    const a = new Float32Array(N*3), H=6.2, turns=3, R=1.7;
+    for (let i=0;i<N;i++){
+      const t = i/(N-1);
+      const ang = t*turns*2*Math.PI + (i%2)*Math.PI;
+      const rr = R + randn()*0.12;
+      let x=Math.cos(ang)*rr, y=(t-0.5)*H, z=Math.sin(ang)*rr;
+      if (i%6===0){ x+=randn()*0.5; z+=randn()*0.5; y+=randn()*0.3; }  // surrounding dust
+      a[i*3]=x; a[i*3+1]=y; a[i*3+2]=z;
+    }
+    return a;
+  }
+  function fRing(){                                       // a tilted halo (torus)
+    const a = new Float32Array(N*3), R=3.3, r=0.85, tilt=0.5;
+    const ct=Math.cos(tilt), st=Math.sin(tilt);
+    for (let i=0;i<N;i++){
+      const u=Math.random()*2*Math.PI, v=Math.random()*2*Math.PI;
+      const x=(R+r*Math.cos(v))*Math.cos(u);
+      const yy=(R+r*Math.cos(v))*Math.sin(u);
+      const z0=r*Math.sin(v);
+      a[i*3]=x; a[i*3+1]=yy*ct - z0*st; a[i*3+2]=yy*st + z0*ct;
+    }
+    return a;
+  }
+  function fBurst(){                                      // great expanding sphere shell
+    const a = new Float32Array(N*3);
+    for (let i=0;i<N;i++){
+      const d = fibDir(i), rr = 6.5 + randn()*0.25;
+      a[i*3]=d[0]*rr; a[i*3+1]=d[1]*rr; a[i*3+2]=d[2]*rr;
+    }
+    return a;
+  }
+  function fHeart(){                                      // the finale — a filled 3D heart
+    const a = new Float32Array(N*3), SCALE=2.4, SHIFT=0.35;
+    let n=0;
+    while (n<N){
+      const x = rand(-1.55,1.55), y = rand(-1.5,1.75);
+      const aa = x*x + y*y - 1;
+      const f  = aa*aa*aa - x*x*y*y*y;                    // <=0 → inside the heart
+      if (f<=0){
+        const d = Math.max(0,-f);
+        const zmax = Math.pow(Math.min(d,1),0.5)*0.55 + 0.05;
+        a[n*3]   = x*SCALE;
+        a[n*3+1] = y*SCALE - SHIFT;
+        a[n*3+2] = rand(-1,1)*zmax*SCALE*0.5;
+        n++;
       }
     }
-    return pts;
+    return a;
   }
 
-  // ---------- the big heart (assembles on unlock) ----------
-  const HEART_SCALE = 2.4;
-  const bigGroup = new THREE.Group();
-  bigGroup.position.y = -0.25;
-  scene.add(bigGroup);
+  // scene table — axis/type control how each formation slowly moves while it's on screen
+  const SCENES = [
+    { base:fDust(),   axis:'y', type:'spin', speed:0.15 },
+    { base:fGalaxy(), axis:'z', type:'spin', speed:0.35 },
+    { base:fHelix(),  axis:'y', type:'spin', speed:0.55 },
+    { base:fRing(),   axis:'y', type:'spin', speed:0.45 },
+    { base:fBurst(),  axis:'y', type:'spin', speed:0.25 },
+    { base:fHeart(),  axis:'y', type:'sway', amp:0.30, freq:0.28 },
+  ];
+  const HEART = SCENES.length - 1;
+  const CENTER = fCenter();
 
-  const bigMesh = new THREE.InstancedMesh(heartGeo, baseMat(), BIG);
-  bigMesh.frustumCulled = false;
-  bigGroup.add(bigMesh);
+  // when each scene begins (its morph-in) and how long the morph lasts, in seconds
+  const TIMING = [
+    { trans:2.5, hold:3.0 },   // dust
+    { trans:2.5, hold:3.5 },   // galaxy
+    { trans:2.5, hold:4.0 },   // helix
+    { trans:2.5, hold:3.5 },   // ring
+    { trans:2.2, hold:1.8 },   // burst
+    { trans:3.0, hold:9999 },  // heart (holds, then idles forever)
+  ];
+  const startTime = [0];
+  for (let k=1;k<SCENES.length;k++) startTime[k] = startTime[k-1] + TIMING[k-1].trans + TIMING[k-1].hold;
 
-  const targets = [], starts = [], rots = [], sizes = [], delays = [];
-  const field = heartFieldPoints(BIG);
-  const ymin = -1.5, ymax = 1.75;
-  for (let i=0;i<BIG;i++){
-    const p = field[i].clone().multiplyScalar(HEART_SCALE);
-    targets.push(p);
-    // scattered starting point in a wide sphere
-    const dir = new THREE.Vector3(rand(-1,1),rand(-1,1),rand(-1,1)).normalize();
-    starts.push(dir.multiplyScalar(rand(6,11)));
-    rots.push(new THREE.Euler(rand(-1,1),rand(-1,1),rand(-1,1)));
-    sizes.push(rand(0.10, 0.19));
-    delays.push(Math.random()*0.45);
-    // colour: deeper at the bottom, lighter toward the top, brighter up front
-    const t = clamp01((field[i].y - ymin)/(ymax - ymin));
-    let idx = Math.floor(t*(HEART_PALETTE.length-1) + rand(-0.4,1.1));
-    idx = Math.max(0, Math.min(HEART_PALETTE.length-1, idx));
-    const col = toColor(HEART_PALETTE[idx]);
-    if (field[i].z > 0) col.multiplyScalar(1.08);
-    bigMesh.setColorAt(i, col);
+  const sceneAngle = (k, st) => {
+    const sc = SCENES[k];
+    return sc.type==='sway' ? sc.amp*Math.sin(st*sc.freq) : sc.speed*st;
+  };
+
+  // ---------- the dancing hearts ----------
+  const particles = new THREE.InstancedMesh(heartGeo, baseMat(), N);
+  particles.frustumCulled = false;
+  scene.add(particles);
+
+  const sizes  = new Float32Array(N);
+  const delays = new Float32Array(N);   // per-heart stagger so morphs flow
+  const facing = new Float32Array(N);   // fixed spin so hearts don't all align
+  for (let i=0;i<N;i++){
+    sizes[i]  = rand(0.10, 0.19);
+    delays[i] = Math.random()*0.35;
+    facing[i] = rand(0, Math.PI*2);
+    const r = Math.random();
+    const idx = r<0.5 ? 0 : r<0.75 ? 1 : r<0.9 ? 2 : r<0.97 ? 3 : 4;
+    particles.setColorAt(i, toColor(HEART_PALETTE[idx]));
   }
-  bigMesh.instanceColor.needsUpdate = true;
+  particles.instanceColor.needsUpdate = true;
 
-  // ---------- bright twinklers sitting on the heart ----------
-  const sparkMesh = new THREE.InstancedMesh(heartGeo, baseMat(), SPARKLE);
-  sparkMesh.frustumCulled = false;
-  bigGroup.add(sparkMesh);
-  const sparkPos = [], sparkSize = [], sparkPhase = [], sparkSpeed = [];
-  for (let i=0;i<SPARKLE;i++){
-    const p = targets[Math.floor(Math.random()*targets.length)];
-    sparkPos.push(p);
-    sparkSize.push(rand(0.16, 0.28));
-    sparkPhase.push(rand(0, Math.PI*2));
-    sparkSpeed.push(rand(1.4, 3.0));
-    sparkMesh.setColorAt(i, toColor(Math.random()<0.6 ? "#fff2f7" : "#ffd9a6", 0.06));
-  }
-  sparkMesh.instanceColor.needsUpdate = true;
-
-  // ---------- drifting embers (always present) ----------
+  // ---------- ambient drifting embers ----------
   const emberMesh = new THREE.InstancedMesh(heartGeo, baseMat(), EMBERS);
   emberMesh.frustumCulled = false;
   scene.add(emberMesh);
@@ -428,7 +494,7 @@
   for (let i=0;i<EMBERS;i++){
     em.push({
       x: rand(-8,8), y: rand(-6,8), z: rand(-4.5, 2.5),
-      size: rand(0.07, 0.34),
+      size: rand(0.07, 0.32),
       speed: rand(0.35, 1.05),
       swayAmp: rand(0.15, 0.7), swayFreq: rand(0.3, 1.1), phase: rand(0,Math.PI*2),
       spin: rand(-0.9, 0.9), rot: rand(0, Math.PI*2)
@@ -440,11 +506,7 @@
   // ---------- faint background dust ----------
   const starGeo = new THREE.BufferGeometry();
   const sp = new Float32Array(STARS*3);
-  for (let i=0;i<STARS;i++){
-    sp[i*3]   = rand(-16,16);
-    sp[i*3+1] = rand(-10,12);
-    sp[i*3+2] = rand(-16,-4);
-  }
+  for (let i=0;i<STARS;i++){ sp[i*3]=rand(-16,16); sp[i*3+1]=rand(-10,12); sp[i*3+2]=rand(-16,-4); }
   starGeo.setAttribute('position', new THREE.BufferAttribute(sp,3));
   const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({
     color:0xffe6f0, size:0.045, sizeAttenuation:true,
@@ -457,14 +519,12 @@
   composer.addPass(new RenderPass(scene, camera));
   const bloom = new UnrealBloomPass(
     new THREE.Vector2(window.innerWidth, window.innerHeight),
-    0.55,                 // strength (ramps up on unlock)
-    LOW ? 0.7 : 0.85,     // radius
-    0.20                  // threshold
+    0.55, LOW ? 0.7 : 0.85, 0.20
   );
   composer.addPass(bloom);
 
   // ---------- state ----------
-  const state = { intensity: 0, target: 0, unlocked:false, backToIntro:false, showTime:0 };
+  const state = { playing:false, returning:false, showTime:0, fade:0 };
   const dummy = new THREE.Object3D();
   const clock = new THREE.Clock();
   const pointer = { x:0, y:0, tx:0, ty:0 };
@@ -482,8 +542,8 @@
 
   function tryUnlock(){
     if (isSecret(keyEl.value)){
-      state.target = 1; state.unlocked = true; state.backToIntro = false;
-      if (reduce) state.intensity = 1;              // no big fly-in for reduced motion
+      state.playing = true; state.returning = false;
+      state.showTime = reduce ? (startTime[HEART] + TIMING[HEART].trans + 0.5) : 0;
       introEl.classList.add('gone');
       keyEl.blur();
     } else {
@@ -495,7 +555,7 @@
   keyEl.addEventListener('keydown', e => { if (e.key === 'Enter'){ e.preventDefault(); tryUnlock(); } });
 
   replayEl.addEventListener('click', () => {
-    state.target = 0; state.unlocked = false; state.backToIntro = true;
+    state.returning = true;
     messageEl.classList.remove('show');
     replayEl.classList.remove('show');
   });
@@ -510,7 +570,7 @@
 
   setTimeout(()=>{ try{ keyEl.focus(); }catch(e){} }, 600);
 
-  // ---------- heartbeat (lub-dub); period can change to feel excited or calm ----------
+  // ---------- heartbeat (lub-dub) ----------
   function heartbeat(t, period){
     const p = (t % period) / period;
     const b1 = Math.exp(-Math.pow((p - 0.00)/0.06, 2));
@@ -519,95 +579,118 @@
   }
 
   // ---------- main loop ----------
-  let lastI = -1;
   function animate(){
     requestAnimationFrame(animate);
     const dt = Math.min(clock.getDelta(), 0.05);
     const t  = clock.elapsedTime;
 
-    // ease the intensity toward its target (a touch slower = a grander gather)
-    if (!reduce){
-      state.intensity += (state.target - state.intensity) * Math.min(1, dt*1.3);
-    } else {
-      state.intensity = state.target ? 1 : lerp(state.intensity, 0, Math.min(1,dt*3));
+    // fade the whole swarm in on unlock, out on replay
+    const wantFade = (state.playing && !state.returning) ? 1 : 0;
+    state.fade += (wantFade - state.fade) * Math.min(1, dt*2.5);
+    if (state.returning && state.fade < 0.02){
+      state.returning = false; state.playing = false; state.showTime = 0;
+      introEl.classList.remove('gone');
+      keyEl.value = '';
+      setTimeout(()=>{ try{ keyEl.focus(); }catch(e){} }, 300);
     }
-    const I = state.intensity;
 
-    // master show clock — seconds since the words were typed
-    if (state.target === 1) state.showTime += dt;
-    const s = state.showTime;
+    // the master show clock
+    if (state.playing && !state.returning) state.showTime += dt;
+    const T = state.showTime;
+    const born = ramp(T, 0, 1.6);
+    const fade = state.fade;
 
-    // ── glow swells at a few beats through the show, then settles ──
-    let bl = lerp(0.5, 1.15, I);
+    // ── glow: rises as the hearts appear, flares at the big beats, then settles ──
+    let bl = 0.55 + 0.5*born;
     if (!reduce){
-      bl += 0.35*gpulse(s,4.5,1.6) + 0.50*gpulse(s,14,1.9)
-          + 0.45*gpulse(s,24,2.1) + 0.30*gpulse(s,33,2.3);
-      bl = lerp(bl, 1.1, ramp(s,36,40));
+      bl += 0.30*gpulse(T,8,1.6) + 0.30*gpulse(T,14,1.8)
+          + 0.50*gpulse(T,26,1.8) + 0.50*gpulse(T,31,2.0);
+      bl = lerp(bl, 1.05, ramp(T,36,42));
     }
     bloom.strength = Math.min(bl, 1.8);
 
-    // ── camera slowly pushes in and drifts, on top of mouse parallax ──
+    // ── camera: settle in, push slowly closer, recoil during the explosion ──
     pointer.x = lerp(pointer.x, pointer.tx, dt*2.2);
     pointer.y = lerp(pointer.y, pointer.ty, dt*2.2);
     const par = reduce ? 0 : 1;
-    const camZ = lerp(CAM_START, CAM_REST, smoother(I))
-               - (reduce ? 0 : 0.8*ramp(s,2,38))
-               + (reduce ? 0 : 0.15*Math.sin(s*0.15));
-    const camX = pointer.x*1.2*par + (reduce ? 0 : Math.sin(s*0.12)*0.4*ramp(s,4,16));
+    const camZ = CAM_REST
+               + 1.6*(1 - ramp(T,0,3.5))
+               - 0.6*ramp(T,3.5,40)
+               + (reduce ? 0 : 0.15*Math.sin(T*0.13))
+               + (reduce ? 0 : 1.3*gpulse(T,26,2.0));
+    const camX = pointer.x*1.2*par + (reduce ? 0 : Math.sin(T*0.1)*0.5*ramp(T,3.5,20));
     camera.position.set(camX, CAM_Y - pointer.y*0.7*par, camZ);
     camera.lookAt(0, 0, 0);
 
-    // big heart: assemble while intensity is changing, then rest (cheap)
-    bigMesh.visible = I > 0.015;
-    sparkMesh.visible = I > 0.35;
-    if (Math.abs(I - lastI) > 0.0006 || I > 0.999 && lastI <= 0.999){
-      for (let i=0;i<BIG;i++){
-        const pr  = smoother((I - delays[i]) / 0.55);
-        const isz = sizes[i] * pr;
-        dummy.position.lerpVectors(starts[i], targets[i], pr);
-        dummy.rotation.copy(rots[i]);
-        dummy.scale.setScalar(isz);
+    // ── figure out which scene we're in, and how far into its morph ──
+    let c = 0;
+    for (let k=0;k<SCENES.length;k++){ if (T >= startTime[k]) c = k; }
+    const st = T - startTime[c];
+    const p  = clamp01(st / TIMING[c].trans);
+
+    const baseCur = SCENES[c].base, axC = SCENES[c].axis;
+    const aC = reduce ? 0 : sceneAngle(c, st);
+    const csC = Math.cos(aC), snC = Math.sin(aC);
+
+    const hasPrev = p < 1;
+    let baseP = CENTER, axP = 'y', csP = 1, snP = 0;
+    if (hasPrev && c > 0){
+      const pc = c - 1;
+      baseP = SCENES[pc].base; axP = SCENES[pc].axis;
+      const aP = reduce ? 0 : sceneAngle(pc, T - startTime[pc]);
+      csP = Math.cos(aP); snP = Math.sin(aP);
+    }
+
+    // heartbeat + breath, but only once the final heart has formed
+    let gscale = 1;
+    if (c === HEART && !reduce){
+      const hh = ramp(st, 0.6, 2.2);
+      const period = lerp(1.05, 1.25, ramp(st,0,25));
+      const amp = (0.05 + 0.03*gpulse(st,6,3)) * hh;
+      gscale = (1 + heartbeat(t, period)*amp) * (1 + 0.04*Math.sin(st*0.2)*hh);
+    }
+
+    // ── place every heart ──
+    const gsize = fade * born;
+    particles.visible = fade > 0.01;
+    if (particles.visible){
+      for (let i=0;i<N;i++){
+        const i3 = i*3;
+        // current formation, rotated about its axis
+        const bx=baseCur[i3], by=baseCur[i3+1], bz=baseCur[i3+2];
+        let cx,cy,cz;
+        if (axC==='y'){ cx=bx*csC+bz*snC; cy=by;              cz=-bx*snC+bz*csC; }
+        else if (axC==='z'){ cx=bx*csC-by*snC; cy=bx*snC+by*csC; cz=bz; }
+        else { cx=bx; cy=by*csC-bz*snC; cz=by*snC+bz*csC; }
+
+        let fx,fy,fz;
+        if (hasPrev){
+          const px0=baseP[i3], py0=baseP[i3+1], pz0=baseP[i3+2];
+          let px,py,pz;
+          if (axP==='y'){ px=px0*csP+pz0*snP; py=py0;               pz=-px0*snP+pz0*csP; }
+          else if (axP==='z'){ px=px0*csP-py0*snP; py=px0*snP+py0*csP; pz=pz0; }
+          else { px=px0; py=py0*csP-pz0*snP; pz=py0*snP+pz0*csP; }
+          let e = (p - delays[i]) / 0.65; e = e<0?0:e>1?1:e; e = e*e*e*(e*(e*6-15)+10);
+          fx=px+(cx-px)*e; fy=py+(cy-py)*e; fz=pz+(cz-pz)*e;
+        } else { fx=cx; fy=cy; fz=cz; }
+
+        dummy.position.set(fx*gscale, fy*gscale, fz*gscale);
+        dummy.rotation.set(0, 0, facing[i]);
+        dummy.scale.setScalar(sizes[i]*gsize);
         dummy.updateMatrix();
-        bigMesh.setMatrixAt(i, dummy.matrix);
+        particles.setMatrixAt(i, dummy.matrix);
       }
-      bigMesh.instanceMatrix.needsUpdate = true;
+      particles.instanceMatrix.needsUpdate = true;
     }
-    lastI = I;
 
-    // ── heartbeat (excited → calm) + a slow breath + a slowly-growing sway ──
-    const period = reduce ? 1.2 : lerp(1.05, 1.25, ramp(s,0,30));
-    const amp    = reduce ? 0.02 : (0.055 + 0.03*gpulse(s,14,2.2) + 0.025*gpulse(s,24,2.4));
-    const beatS  = 1 + heartbeat(t, period) * amp * I;
-    const breath = reduce ? 1 : 1 + 0.05*Math.sin(s*0.18)*ramp(s,2,7);
-    bigGroup.scale.setScalar(beatS * breath);
+    // ── ambient embers: modest through the show, gushing into the finale ──
+    let eScale = 0.28 + 0.25*born;
+    let eSpeed = 0.5;
     if (!reduce){
-      bigGroup.rotation.y = Math.sin(s*0.28)       * lerp(0.15,0.5,ramp(s,3,16)) * I;
-      bigGroup.rotation.x = Math.sin(s*0.21 + 1.0) * lerp(0.06,0.16,ramp(s,3,16)) * I;
-    }
-
-    // twinklers
-    if (sparkMesh.visible){
-      for (let i=0;i<SPARKLE;i++){
-        const tw = 0.55 + 0.5*Math.sin(t*sparkSpeed[i] + sparkPhase[i]);
-        dummy.position.copy(sparkPos[i]);
-        dummy.rotation.set(0,0,sparkPhase[i]);
-        dummy.scale.setScalar(sparkSize[i]*tw*I);
-        dummy.updateMatrix();
-        sparkMesh.setMatrixAt(i, dummy.matrix);
-      }
-      sparkMesh.instanceMatrix.needsUpdate = true;
-    }
-
-    // drifting embers — always alive, and they gush during the big beats
-    let eScale = 0.35 + 0.65*I;
-    let eSpeed = 0.4 + 0.6*I;
-    if (!reduce){
-      eSpeed += 0.9*gpulse(s,14,1.6) + 0.7*gpulse(s,24,1.8) + 0.5*ramp(s,26,34);
-      eScale += 0.25*gpulse(s,14,2.0) + 0.20*gpulse(s,24,2.2);
-    } else {
-      eSpeed *= 0.35;
-    }
-    eScale = Math.min(eScale, 1.45);
+      eSpeed += 0.9*gpulse(T,26,1.8) + 0.5*ramp(T,30,38);
+      eScale += 0.35*gpulse(T,26,2.2) + 0.35*ramp(T,30,38);
+    } else { eSpeed *= 0.4; }
+    eScale = Math.min(eScale, 1.5);
     for (let i=0;i<EMBERS;i++){
       const e = em[i];
       e.y += e.speed * eSpeed * dt;
@@ -622,20 +705,12 @@
     }
     emberMesh.instanceMatrix.needsUpdate = true;
 
-    // stars drift ever so slightly
     stars.rotation.y = t * 0.01;
 
-    // reveal the words (lines cascade via CSS); offer "again" once it's settled
-    if (I > 0.82) messageEl.classList.add('show'); else messageEl.classList.remove('show');
-    if (state.target === 1 && s > 9) replayEl.classList.add('show');
-    if (state.backToIntro && I < 0.05){
-      state.backToIntro = false;
-      state.showTime = 0;
-      introEl.classList.remove('gone');
-      replayEl.classList.remove('show');
-      keyEl.value = '';
-      setTimeout(()=>{ try{ keyEl.focus(); }catch(e){} }, 300);
-    }
+    // ── reveal the words once the heart has formed; offer "again" a bit later ──
+    const show = (c === HEART && st > 1.2 && !state.returning);
+    if (show) messageEl.classList.add('show'); else messageEl.classList.remove('show');
+    if (c === HEART && st > 9 && !state.returning) replayEl.classList.add('show');
 
     composer.render();
   }
